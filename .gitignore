@@ -1,0 +1,13 @@
+.idea
+.vscode
+*.log
+/dist/
+/venv/
+__pycache__/
+tmp
+.pytest_cache
+*.pyc
+.DS_Store
+*.egg-info
+WEBHOOK_URL
+FILE_UPLOAD_TOKEN

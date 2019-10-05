@@ -1,0 +1,1 @@
++ slack_rig_updater 0.1 ./slack_rig_updater
