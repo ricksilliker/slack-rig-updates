@@ -1,5 +1,6 @@
 import os
 import platform
+import logging
 
 from PySide2 import QtWidgets, QtCore, QtNetwork
 
@@ -7,13 +8,8 @@ import utils
 import service
 
 
-test_value = [{
-  "type": "section",
-  "text": {
-    "type": "mrkdwn",
-    "text": "A message *with some bold text* and _some italicized text_."
-  }
-}]
+LOG = logging.getLogger(__name__)
+
 
 class MainWidget(QtWidgets.QWidget):
     @staticmethod
@@ -75,9 +71,11 @@ class SendUpdateTab(QtWidgets.QWidget):
 
         self.notesList = QtWidgets.QListWidget()
         main_layout.addWidget(self.notesList)
+        self.notesList.doubleClicked.connect(self.loadSelectedNote)
 
         self.addNoteField = QtWidgets.QLineEdit()
         main_layout.addWidget(self.addNoteField)
+        self.addNoteField.returnPressed.connect(self.addNewNote)
 
         h_layout = QtWidgets.QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -89,7 +87,7 @@ class SendUpdateTab(QtWidgets.QWidget):
         h_layout.addWidget(self.uploadFilePath)
 
         self.button = QtWidgets.QPushButton('Send')
-        self.button.clicked.connect(self.sendTest)
+        self.button.clicked.connect(self.post)
         main_layout.addWidget(self.button)
 
         self.http = QtNetwork.QNetworkAccessManager()
@@ -125,22 +123,43 @@ class SendUpdateTab(QtWidgets.QWidget):
 
         notesFormatted = ''
 
-        for item in self.notesList.items():
+        for i in range(self.notesList.count()):
+            item = self.notesList.item(i)
+            if item is None:
+                continue
+            
             note = item.data(QtCore.Qt.DisplayRole)
-            noteFormatted = "• {0} \n".format(note)
+            noteFormatted = "{0}. {1} \n".format(i+1, note)
             notesFormatted += noteFormatted
 
-        blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": notesFormatted,
-                }
-		    })
+        if notesFormatted:
+            blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": notesFormatted,
+                    }
+                })
 
         return blocks
 
-    def sendTest(self):
+    def addNewNote(self):
+        note = self.addNoteField.text()
+
+        selectedItems = self.notesList.selectedItems()
+        
+        if selectedItems:
+            selectedItems[0].setData(QtCore.Qt.DisplayRole, note)
+            self.addNoteField.clear()
+            return
+        
+        self.notesList.addItem(note)
+        self.addNoteField.clear()
+
+    def loadSelectedNote(self, item):
+        self.addNoteField.setText(item.data(QtCore.Qt.DisplayRole))
+
+    def post(self):
         url = os.environ['SLACK_WEBHOOK_URL']
         request = service.createRequest(url)
         self.response = service.doPOST(self.http, request, blocks=self.createBlocks())
@@ -152,9 +171,9 @@ class SendUpdateTab(QtWidgets.QWidget):
         err = self.response.error()
 
         if err == QtNetwork.QNetworkReply.NoError:
-            print str(self.response.readAll())
+            LOG.info(str(self.response.readAll()))
         else:
-            print self.response.errorString()
+            LOG.error(self.response.errorString())
 
 
 class RequestFeedbackTab(QtWidgets.QWidget):
@@ -175,14 +194,11 @@ class RequestFeedbackTab(QtWidgets.QWidget):
         self.askQuestionField = QtWidgets.QLineEdit()
         form_layout.addRow('Ask:', self.askQuestionField)
 
-        optionsLabel = QtWidgets.QLabel('Options:')
+        optionsLabel = QtWidgets.QLabel('Feedback:')
         main_layout.addWidget(optionsLabel)
 
-        self.optionsList = QtWidgets.QListWidget()
-        main_layout.addWidget(self.optionsList)
-
-        self.addOptionField = QtWidgets.QLineEdit()
-        main_layout.addWidget(self.addOptionField)
+        self.feedbackList = QtWidgets.QListWidget()
+        main_layout.addWidget(self.feedbackList)
 
         h_layout = QtWidgets.QHBoxLayout()
         main_layout.addLayout(h_layout)
@@ -194,7 +210,7 @@ class RequestFeedbackTab(QtWidgets.QWidget):
         h_layout.addWidget(self.uploadFilePath)
 
         self.button = QtWidgets.QPushButton('Send')
-        self.button.clicked.connect(self.sendTest)
+        self.button.clicked.connect(self.post)
         main_layout.addWidget(self.button)
 
         self.http = QtNetwork.QNetworkAccessManager()
@@ -206,14 +222,31 @@ class RequestFeedbackTab(QtWidgets.QWidget):
     def title(self):
         return 'Request Feedback'
 
+    def getQuestion(self):
+        text = self.askQuestionField.text()
+
+        if not text.endswith('?'):
+            text += '?'
+
+        return text
+
     def createBlocks(self):
-        blocks = []
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "{0} :thread:".format(self.getQuestion()),
+                }
+		    }
+        ]
+
         return blocks
 
-    def sendTest(self):
+    def post(self):
         url = os.environ['SLACK_WEBHOOK_URL']
         request = service.createRequest(url)
-        self.response = service.doPOST(self.http, request, blocks=test_value)
+        self.response = service.doPOST(self.http, request, blocks=self.createBlocks())
 
     def logResponse(self):
         if self.response == None:
@@ -222,6 +255,6 @@ class RequestFeedbackTab(QtWidgets.QWidget):
         err = self.response.error()
 
         if err == QtNetwork.QNetworkReply.NoError:
-            print str(self.response.readAll())
+            LOG.info(str(self.response.readAll()))
         else:
-            print self.response.errorString()
+            LOG.error(self.response.errorString())
